@@ -1,4 +1,5 @@
 import warnings
+import json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,7 +14,13 @@ class Astronaut():
         self.indicator_mapping = indicator_mapping
 
     @classmethod
-    def from_excel(cls, xlsx_filepath, trends_dict):
+    def from_excel(cls, xlsx_filepath, indicator_evaluations_filepath):
+        """Instantiate the class from an excel file.
+        
+        Args:
+            xlsx_filepath: Path to the excel file as exported from Kosmos.
+            indicator_evaluations_filepath: Path to the JSON file containing the evalutations of the indicator variables. 
+        """
         df = pd.read_excel(xlsx_filepath)
         df.iloc[0] = df.iloc[0].ffill()
         df = df.iloc[:3, 1:]
@@ -40,7 +47,9 @@ class Astronaut():
         # Turn each indicator into it's own column.
         data = data.pivot(index='Jahr', columns='Kennzahl', values='Wert')
 
-        return cls(data, trends_dict)
+        indicator_evaluations = json.load(open(indicator_evaluations_filepath))
+        
+        return cls(data, indicator_evaluations)
 
     def plot_indicators(self):
         with warnings.catch_warnings():
@@ -59,7 +68,9 @@ class Astronaut():
          ).draw()
 
     def plot_correlation_matrix(self):
-        correlation_matrix = self.data.corr()
+        data_series_only = self._remove_single_value_indicators()
+        
+        correlation_matrix = data_series_only.corr()
         # Generate a mask for the upper triangle
         mask = np.zeros_like(correlation_matrix, dtype=np.bool)
         mask[np.triu_indices_from(mask)] = True
@@ -69,10 +80,23 @@ class Astronaut():
 
         # Generate a custom diverging colormap
         cmap = sns.diverging_palette(220, 10, as_cmap=True)
-
+        ticks = [-1, -0.5, 0, 0.5, 1]
         # Draw the heatmap with the mask and correct aspect ratio
-        sns.heatmap(correlation_matrix, mask=mask, cmap=cmap, vmax=.3, center=0,
-                    square=True, linewidths=.5, cbar_kws={"shrink": .5})
+        heatmap = sns.heatmap(correlation_matrix, mask=mask, cmap=cmap, vmax=1, vmin=-1, center=0,
+                    square=True, linewidths=0.5, cbar_kws={'shrink': 0.5, 'ticks': ticks})
+        heatmap.xaxis.set_ticklabels(heatmap.xaxis.get_ticklabels(), rotation=35, ha='right')
+        
+    def _remove_single_value_indicators(self):
+        data_series_only = self.data.copy()
+
+        for indicator in data_series_only.columns:
+           if data_series_only[indicator].notna().sum() <= 1:
+               del data_series_only[indicator]
+        
+        return data_series_only
+
+    def compute_score(self):
+        pass
 
     def plot_trend(self):
         data_adjusted = self._adjust_data()
